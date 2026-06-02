@@ -1,0 +1,10 @@
+{
+  "id": "tianqiaoxing-mspm0g3519",
+  "name": "Tianqiaoxing MSPM0G3519",
+  "family": "MSPM0",
+  "mcu": "MSPM0G3519",
+  "package": "LQFP-64",
+  "buildAdapter": "mspm0-ccs-gmake",
+  "flashAdapter": "xds110",
+  "sdkExampleHint": "examples/nortos/LP_MSPM0G3519/driverlib/empty"
+}

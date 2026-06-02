@@ -1,0 +1,118 @@
+{
+  "name": "openkits-embedded",
+  "displayName": "OpenKits Embedded",
+  "description": "Embedded AI workflow extension for OpenKits Studio.",
+  "version": "0.1.0",
+  "publisher": "openkits",
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:openkits.showWelcome",
+    "onCommand:openkits.selectBoard",
+    "onCommand:openkits.createProject",
+    "onCommand:openkits.checkToolchain",
+    "onCommand:openkits.build",
+    "onCommand:openkits.flash"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "OpenKits",
+      "properties": {
+        "openkits.board.default": {
+          "type": "string",
+          "default": "tianqiaoxing-mspm0g3519",
+          "description": "Default OpenKits board package id."
+        },
+        "openkits.runtime.root": {
+          "type": "string",
+          "default": "",
+          "description": "OpenKits runtime directory containing Git, Node, SDK, compiler, and flash tools."
+        },
+        "openkits.agent.requireDiffApproval": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require VS Code Diff approval before the Agent writes files."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "openkits.showWelcome",
+        "title": "OpenKits: Show Welcome"
+      },
+      {
+        "command": "openkits.selectBoard",
+        "title": "OpenKits: Select Board"
+      },
+      {
+        "command": "openkits.createProject",
+        "title": "OpenKits: Create MSPM0 Project"
+      },
+      {
+        "command": "openkits.checkToolchain",
+        "title": "OpenKits: Check Toolchain"
+      },
+      {
+        "command": "openkits.build",
+        "title": "OpenKits: Build"
+      },
+      {
+        "command": "openkits.flash",
+        "title": "OpenKits: Flash"
+      },
+      {
+        "command": "openkits.agent.previewAdcPatch",
+        "title": "OpenKits Agent: Preview ADC Patch"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "openkits",
+          "title": "OpenKits",
+          "icon": "media/openkits.svg"
+        }
+      ]
+    },
+    "views": {
+      "openkits": [
+        {
+          "id": "openkits.agent",
+          "name": "AI Agent",
+          "type": "webview"
+        },
+        {
+          "id": "openkits.boards",
+          "name": "Boards"
+        }
+      ]
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "openkits.showWelcome"
+        },
+        {
+          "command": "openkits.selectBoard"
+        },
+        {
+          "command": "openkits.createProject"
+        },
+        {
+          "command": "openkits.checkToolchain"
+        },
+        {
+          "command": "openkits.build"
+        },
+        {
+          "command": "openkits.flash"
+        }
+      ]
+    }
+  }
+}

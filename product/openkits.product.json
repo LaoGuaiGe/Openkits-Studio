@@ -1,0 +1,28 @@
+{
+  "nameShort": "OpenKits Studio",
+  "nameLong": "OpenKits Studio",
+  "applicationName": "openkits-studio",
+  "dataFolderName": ".openkits-studio",
+  "win32MutexName": "openkits-studio",
+  "licenseName": "MIT",
+  "serverApplicationName": "openkits-server",
+  "serverDataFolderName": ".openkits-server",
+  "tunnelApplicationName": "openkits-tunnel",
+  "win32DirName": "OpenKits Studio",
+  "win32NameVersion": "OpenKits Studio",
+  "win32RegValueName": "OpenKitsStudio",
+  "win32AppUserModelId": "OpenKits.Studio",
+  "win32ShellNameShort": "OpenKits Studio",
+  "urlProtocol": "openkits",
+  "extensionEnabledApiProposals": {
+    "openkits.openkits-embedded": []
+  },
+  "builtInExtensions": [
+    {
+      "name": "openkits-embedded",
+      "publisher": "openkits",
+      "version": "0.1.0",
+      "repo": "https://github.com/openkits/openkits-studio"
+    }
+  ]
+}

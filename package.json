@@ -1,0 +1,16 @@
+{
+  "name": "openkits-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VS Code OSS based embedded AI studio MVP scaffold.",
+  "scripts": {
+    "validate": "node scripts/validate-mvp.js"
+  },
+  "workspaces": [
+    "extensions/openkits-embedded",
+    "packages/openkits-core"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
