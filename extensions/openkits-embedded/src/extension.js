@@ -12,6 +12,7 @@ const {
   scaffoldProject,
 } = require("../../../packages/openkits-core/src");
 const agentTools = require("../../../packages/openkits-core/src/agent-tools");
+const { SYSTEM_PROMPT, callLlm, extractAssistantMessage } = require("../../../packages/openkits-core/src/agent-llm");
 
 function activate(context) {
   const state = {
@@ -367,6 +368,7 @@ async function previewAdcPatch() {
 class AgentViewProvider {
   constructor(extensionUri) {
     this.extensionUri = extensionUri;
+    this._conversationHistory = [];
   }
 
   resolveWebviewView(webviewView) {
@@ -391,12 +393,108 @@ class AgentViewProvider {
       if (message.command === "flash") {
         await vscode.commands.executeCommand("openkits.flash");
       }
-      // Agent 工具调用
+      // Agent 工具调用（手动）
       if (message.command === "agentTool") {
         const result = await executeAgentTool(message.tool, message.params);
         webviewView.webview.postMessage({ type: "toolResult", tool: message.tool, result });
       }
+      // AI 对话
+      if (message.command === "chat") {
+        await this._handleChat(message.text, webviewView.webview);
+      }
+      // 清除对话历史
+      if (message.command === "clearChat") {
+        this._conversationHistory = [];
+        webviewView.webview.postMessage({ type: "chatCleared" });
+      }
     });
+  }
+
+  /**
+   * 处理用户发送的聊天消息
+   */
+  async _handleChat(userText, webview) {
+    const config = getConfig();
+    const apiKey = config.get("agent.apiKey");
+    const endpoint = config.get("agent.apiEndpoint") || "https://api.deepseek.com";
+    const model = config.get("agent.model") || "deepseek-v4-pro";
+
+    if (!apiKey) {
+      webview.postMessage({
+        type: "chatResponse",
+        content: "⚠️ 未配置 API Key。请在设置中填写 `openkits.agent.apiKey`。\n\n路径: File → Preferences → Settings → 搜索 \"openkits agent\"",
+        done: true,
+      });
+      return;
+    }
+
+    // 添加用户消息到历史
+    this._conversationHistory.push({ role: "user", content: userText });
+
+    // 通知 webview 开始思考
+    webview.postMessage({ type: "chatThinking" });
+
+    try {
+      // 对话循环（支持多轮工具调用）
+      let maxRounds = 5;
+      while (maxRounds-- > 0) {
+        const messages = [
+          { role: "system", content: SYSTEM_PROMPT },
+          ...this._conversationHistory,
+        ];
+
+        const response = await callLlm({ apiKey, endpoint, model, messages });
+        const assistant = extractAssistantMessage(response);
+
+        // 如果有工具调用
+        if (assistant.toolCalls && assistant.toolCalls.length > 0) {
+          // 将助手消息（含 tool_calls）加入历史
+          this._conversationHistory.push(assistant.raw);
+
+          // 逐个执行工具
+          for (const toolCall of assistant.toolCalls) {
+            const toolName = toolCall.function.name;
+            let toolParams = {};
+            try {
+              toolParams = JSON.parse(toolCall.function.arguments || "{}");
+            } catch { /* ignore */ }
+
+            webview.postMessage({
+              type: "chatToolCall",
+              tool: toolName,
+              params: toolParams,
+            });
+
+            const toolResult = await executeAgentTool(toolName, toolParams);
+
+            // 将工具结果加入历史
+            this._conversationHistory.push({
+              role: "tool",
+              tool_call_id: toolCall.id,
+              content: JSON.stringify(toolResult),
+            });
+          }
+
+          // 继续循环让模型生成最终回复
+          continue;
+        }
+
+        // 没有工具调用，返回文本回复
+        this._conversationHistory.push({ role: "assistant", content: assistant.content });
+        webview.postMessage({
+          type: "chatResponse",
+          content: assistant.content,
+          done: true,
+        });
+        break;
+      }
+    } catch (err) {
+      webview.postMessage({
+        type: "chatResponse",
+        content: `❌ API 调用失败: ${err.message}`,
+        done: true,
+      });
+    }
   }
 }
 
@@ -550,30 +648,104 @@ function welcomeHtml() {
 function agentHtml() {
   return htmlShell(`
     <main>
-      <h2>AI Agent</h2>
+      <div class="header">
+        <h2>AI Agent</h2>
+        <button class="icon-btn" onclick="clearChat()" title="清除对话">🗑</button>
+      </div>
       <div id="messages"></div>
-      <textarea id="input" placeholder="例如：增加 ADC 采样功能"></textarea>
-      <div class="actions">
-        <button onclick="send('previewAdcPatch')">ADC Patch Demo</button>
+      <div class="input-area">
+        <textarea id="input" placeholder="输入你的需求，例如：帮我增加 ADC 采样功能" rows="3"></textarea>
+        <button id="sendBtn" onclick="sendChat()">发送</button>
+      </div>
+      <div class="quick-actions">
         <button onclick="send('build')">编译</button>
         <button onclick="send('flash')">烧录</button>
         <button onclick="callTool('ReadProject')">读取工程</button>
-        <button onclick="callTool('DetectProbe')">检测烧录器</button>
+        <button onclick="send('checkToolchain')">检测工具链</button>
       </div>
       <p class="hint">Agent 写操作走 Diff 预览，确认后才写入文件。</p>
     </main>
     <script>
       const vscode = acquireVsCodeApi();
+
       function send(command) { vscode.postMessage({ command }); }
       function callTool(tool, params) {
         vscode.postMessage({ command: 'agentTool', tool, params: params || {} });
       }
+
+      function sendChat() {
+        const input = document.getElementById('input');
+        const text = input.value.trim();
+        if (!text) return;
+        appendMessage('user', text);
+        vscode.postMessage({ command: 'chat', text });
+        input.value = '';
+        document.getElementById('sendBtn').disabled = true;
+      }
+
+      function clearChat() {
+        vscode.postMessage({ command: 'clearChat' });
+        document.getElementById('messages').innerHTML = '';
+      }
+
+      // Enter 发送，Shift+Enter 换行
+      document.getElementById('input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendChat();
+        }
+      });
+
+      function appendMessage(role, content) {
+        const el = document.getElementById('messages');
+        const div = document.createElement('div');
+        div.className = 'msg msg-' + role;
+        div.textContent = content;
+        el.appendChild(div);
+        el.scrollTop = el.scrollHeight;
+      }
+
+      function appendToolCall(tool, params) {
+        const el = document.getElementById('messages');
+        const div = document.createElement('div');
+        div.className = 'msg msg-tool';
+        div.textContent = '🔧 调用工具: ' + tool;
+        el.appendChild(div);
+        el.scrollTop = el.scrollHeight;
+      }
+
       window.addEventListener('message', (event) => {
         const msg = event.data;
+        if (msg.type === 'chatThinking') {
+          appendMessage('assistant', '⏳ 思考中...');
+        }
+        if (msg.type === 'chatResponse') {
+          // 移除 "思考中" 提示
+          const el = document.getElementById('messages');
+          const last = el.lastElementChild;
+          if (last && last.textContent === '⏳ 思考中...') {
+            el.removeChild(last);
+          }
+          appendMessage('assistant', msg.content);
+          document.getElementById('sendBtn').disabled = false;
+        }
+        if (msg.type === 'chatToolCall') {
+          // 移除 "思考中" 提示
+          const el = document.getElementById('messages');
+          const last = el.lastElementChild;
+          if (last && last.textContent === '⏳ 思考中...') {
+            el.removeChild(last);
+          }
+          appendToolCall(msg.tool, msg.params);
+        }
+        if (msg.type === 'chatCleared') {
+          document.getElementById('messages').innerHTML = '';
+        }
         if (msg.type === 'toolResult') {
           const el = document.getElementById('messages');
           const pre = document.createElement('pre');
-          pre.textContent = '[' + msg.tool + '] ' + JSON.stringify(msg.result, null, 2).slice(0, 500);
+          pre.className = 'msg msg-tool-result';
+          pre.textContent = JSON.stringify(msg.result, null, 2).slice(0, 300);
           el.appendChild(pre);
           el.scrollTop = el.scrollHeight;
         }
@@ -589,16 +761,26 @@ function htmlShell(body) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-      body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); }
-      main { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+      body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); margin: 0; }
+      main { padding: 12px; display: flex; flex-direction: column; gap: 8px; height: 100vh; box-sizing: border-box; }
       h1, h2, p { margin: 0; }
-      button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 0; padding: 8px 10px; cursor: pointer; }
-      button:hover { background: var(--vscode-button-hoverBackground); }
-      textarea { min-height: 88px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border); padding: 8px; resize: vertical; }
-      .actions { display: flex; flex-wrap: wrap; gap: 6px; }
-      .hint { font-size: 12px; opacity: 0.7; }
-      #messages { max-height: 200px; overflow-y: auto; font-size: 12px; }
-      #messages pre { margin: 4px 0; padding: 6px; background: var(--vscode-textBlockQuote-background); white-space: pre-wrap; word-break: break-all; }
+      .header { display: flex; align-items: center; justify-content: space-between; }
+      .header h2 { font-size: 14px; }
+      .icon-btn { background: none; border: none; color: var(--vscode-foreground); cursor: pointer; font-size: 14px; padding: 4px; }
+      #messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; min-height: 100px; }
+      .msg { padding: 6px 10px; border-radius: 6px; font-size: 13px; white-space: pre-wrap; word-break: break-word; max-width: 95%; }
+      .msg-user { background: var(--vscode-button-background); color: var(--vscode-button-foreground); align-self: flex-end; }
+      .msg-assistant { background: var(--vscode-textBlockQuote-background); align-self: flex-start; }
+      .msg-tool { background: var(--vscode-editorInfo-background, rgba(0,120,212,0.1)); font-size: 12px; align-self: flex-start; opacity: 0.85; }
+      .msg-tool-result { background: var(--vscode-textBlockQuote-background); font-size: 11px; align-self: flex-start; margin: 0; overflow-x: auto; }
+      .input-area { display: flex; gap: 6px; }
+      .input-area textarea { flex: 1; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border); padding: 8px; resize: none; font-size: 13px; }
+      .input-area button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 0; padding: 8px 14px; cursor: pointer; white-space: nowrap; }
+      .input-area button:disabled { opacity: 0.5; cursor: default; }
+      .quick-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+      .quick-actions button { color: var(--vscode-button-foreground); background: var(--vscode-button-secondaryBackground, var(--vscode-button-background)); border: 0; padding: 4px 8px; cursor: pointer; font-size: 12px; }
+      .hint { font-size: 11px; opacity: 0.6; }
+      button:hover { opacity: 0.9; }
     </style>
   </head>
   <body>${body}</body>

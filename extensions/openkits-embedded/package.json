@@ -37,6 +37,21 @@
           "type": "boolean",
           "default": true,
           "description": "Require VS Code Diff approval before the Agent writes files."
+        },
+        "openkits.agent.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "AI model API Key (DeepSeek / OpenAI compatible)."
+        },
+        "openkits.agent.apiEndpoint": {
+          "type": "string",
+          "default": "https://api.deepseek.com",
+          "description": "AI model API endpoint."
+        },
+        "openkits.agent.model": {
+          "type": "string",
+          "default": "deepseek-v4-pro",
+          "description": "AI model name."
         }
       }
     },
